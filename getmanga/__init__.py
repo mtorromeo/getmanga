@@ -6,6 +6,7 @@
 import os
 import re
 import sys
+import math
 
 from collections import namedtuple
 from queue import Queue
@@ -75,20 +76,29 @@ class GetManga(object):
         threads = []
         semaphore = Semaphore(self.concurrency)
         queue = Queue()
-        for page in pages:
-            thread = Thread(target=self._get_image, args=(semaphore, queue, page))
+        for num, page in enumerate(pages):
+            thread = Thread(target=self._get_image, args=(semaphore, queue, page, num))
             thread.daemon = True
             thread.start()
             threads.append(thread)
 
         try:
+            pagecount = len(pages)
+            pages = [None] * pagecount
+            pagefill = int(math.log10(pagecount)) + 1
             for thread in threads:
                 thread.join()
-                name, image = queue.get()
-                if not name:
+                num, image_ext, image = queue.get()
+                if num is None:
                     raise MangaException(image)
+                pages[num] = (
+                    "{0}.{1}".format(str(num + 1).zfill(pagefill), image_ext),
+                    image,
+                )
+                progress(num + 1, pagecount)
+
+            for name, image in pages:
                 cbz.writestr(name, image)
-                progress(len(cbz.filelist), len(pages))
         except Exception as msg:
             cbz.close()
             os.remove(cbz_tmp)
@@ -97,18 +107,17 @@ class GetManga(object):
             cbz.close()
             os.rename(cbz_tmp, cbz_file)
 
-    def _get_image(self, semaphore, queue, page):
+    def _get_image(self, semaphore, queue, page, num):
         """Downloads page images inside a thread"""
         try:
             semaphore.acquire()
             url = self.manga.get_image_url(page.url)
             image_ext = urlparse(url).path.split('.')[-1]
-            name = page.name + os.path.extsep + image_ext
             image = self.manga.download(url)
         except MangaException as msg:
-            queue.put((None, msg))
+            queue.put((None, None, msg))
         else:
-            queue.put((name, image))
+            queue.put((num, image_ext, image))
         finally:
             semaphore.release()
 
