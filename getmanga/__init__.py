@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import math
+import progressbar
 
 from collections import namedtuple
 from queue import Queue
@@ -71,7 +72,7 @@ class GetManga(object):
         sys.stdout.write("downloading {0} {1}:\n".format(self.title, chapter.number))
 
         pages = self.manga.get_pages(chapter.url)
-        progress(0, len(pages))
+        bar = progressbar.ProgressBar()
 
         threads = []
         semaphore = Semaphore(self.concurrency)
@@ -86,7 +87,7 @@ class GetManga(object):
             pagecount = len(pages)
             pages = [None] * pagecount
             pagefill = int(math.log10(pagecount)) + 1
-            for thread in threads:
+            for thread in bar(threads):
                 thread.join()
                 num, image_ext, image = queue.get()
                 if num is None:
@@ -95,7 +96,6 @@ class GetManga(object):
                     "{0}.{1}".format(str(num + 1).zfill(pagefill), image_ext),
                     image,
                 )
-                progress(num + 1, pagecount)
 
             for name, image in pages:
                 cbz.writestr(name, image)
@@ -380,20 +380,3 @@ def urlopen(url):
     if not resp.content:
         raise MangaException("Failed to retrieve {0}".format(url))
     return resp
-
-
-def progress(page, total):
-    """Display progress bar"""
-    try:
-        page, total = int(page), int(total)
-        marks = int(round(50 * (page / total)))
-        spaces = int(round(50 - marks))
-    except Exception:
-        raise MangaException('Unknown error')
-
-    loader = '[' + ('#' * int(marks)) + ('-' * int(spaces)) + ']'
-
-    sys.stdout.write('%s page %d of %d\r' % (loader, page, total))
-    if page == total:
-        sys.stdout.write('\n')
-    sys.stdout.flush()
